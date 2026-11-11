@@ -1,3 +1,17 @@
+# CLAUDE.md: the state-tenders family
+
+Tender portals of states that do not run GePNIC (s1d-labs scrape pool). The general contract (scrape.json, env vars, HubClient) is below,
+from the family template. What is particular here:
+
+- One task script per portal (`bihar.py`), with shared HTTP code in `portal.py` (certificates in `certs/`, pacing, request metrics).
+- Public data only: never pass a login, captcha or OTP. Some portals check a captcha only in the browser; skipping it by calling the API
+  is the owner's call, not this repo's.
+- Each tender is one record; its raw JSON goes to `raw/<id>.json.gz` and its documents to `docs/<id>/<name>`.
+
+## Writing reports
+
+Reports, summaries and documentation for readers are written in ASD-STE100 Simplified Technical English.
+
 # CLAUDE.md: how this repo works (s1d-labs scrape pool family)
 
 This repo is one **family** of the s1d-labs scrape pool: scrapers that run on members' GitHub Actions minutes, coordinated by
