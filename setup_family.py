@@ -4,7 +4,8 @@ from scrape_hub_client import register_project, seed_queue, set_pool, set_probes
 
 from family import FAMILY, PROBES, PROJECTS
 
-print("health checks:", set_probes(FAMILY, PROBES))
+if PROBES:
+    print("health checks:", set_probes(FAMILY, PROBES))
 for p in PROJECTS:
     register_project(p["name"], title=p["title"], unit_label=p["unit_label"], record_label=p["record_label"])
     set_pool(p["name"], FAMILY, p["task"], target=p["target"], env=p["env"], probe=p["probe"], geo="IN", max_workers=p["workers"], threads=1,

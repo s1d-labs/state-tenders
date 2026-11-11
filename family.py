@@ -24,7 +24,7 @@ PROJECTS = [
         "task": "bihar",
         "target": "eproc2.bihar.gov.in",
         "env": {},
-        "probe": f"{FAMILY}:eproc2.bihar.gov.in",
+        "probe": None,        # no health check: the hub is outside India and the portal answers only Indian addresses
         "unit_label": "list page or tender", "record_label": "tender",
         "items": [{"key": f"list-{d}-0", "payload": {"dept": d, "start": 0}} for d in BIHAR_DEPTS],
         "workers": 2,
@@ -41,7 +41,7 @@ PROJECTS += [
         "task": "aptms",
         "target": host,
         "env": {"SITE": host},
-        "probe": f"{FAMILY}:{host}",
+        "probe": None,
         "unit_label": "poll or tender", "record_label": "tender",
         "items": [{"key": f"poll-{TODAY}", "payload": {}}],
         "workers": 2,
@@ -50,5 +50,4 @@ PROJECTS += [
     for slug, host, title in TMS
 ]
 
-PROBES = [{"name": f"{FAMILY}:{host}", "url": f"https://{host}/login.html", "expect": "CSRFToken"} for _, host, _ in TMS]
-PROBES += [{"name": f"{FAMILY}:eproc2.bihar.gov.in", "url": "https://eproc2.bihar.gov.in/EPSV2Web/", "expect": "eProc"}]
+PROBES = []             # the hub checks from outside India, and these portals answer only Indian addresses
