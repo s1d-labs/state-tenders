@@ -3,6 +3,8 @@
 
 - Bihar eProc2 (eproc2.bihar.gov.in): past tenders of the road and city departments, the tender view, the contract (firm, PAN, value)
   and the documents. The queue starts with page 0 of each department's past-tender list and grows by itself.
+- Gujarat nProcure (tender.nprocure.com): road works in progress (all departments, kept by title) and the awarded tenders of Roads and
+  Buildings; notice, contract page, documents.
 - Andhra Pradesh and Telangana (same TMS software): current works tenders, each notice page and its documents. Only current tenders are
   public, so the poll workflow queues "poll-<date>" every day, and each poll queues the tenders not seen before.
 """
@@ -49,5 +51,18 @@ PROJECTS += [
     }
     for slug, host, title in TMS
 ]
+
+PROJECTS.append({
+    "name": f"{FAMILY}-gujarat",
+    "title": "Gujarat nProcure: road works tenders in progress and awarded (Roads and Buildings), notices and documents",
+    "task": "nprocure",
+    "target": "tender.nprocure.com",
+    "env": {},
+    "probe": None,
+    "unit_label": "list page or tender", "record_label": "tender",
+    "items": [{"key": "prog-0", "payload": {"start": 0}}, {"key": "awd-14-0", "payload": {"client": 14, "start": 0}}],
+    "workers": 2,
+    "delay_ms": 2000,
+})
 
 PROBES = []             # the hub checks from outside India, and these portals answer only Indian addresses
