@@ -1,5 +1,5 @@
 """What this family scrapes: the tender portals of states that do not run GePNIC. One project per portal, on the pool's India servers
-(geo="IN"): the portals answer only from India. Public data only: no login, no captcha, no OTP is passed.
+(geo="IN"), or GitHub runners through the pool's Mumbai proxies (proxy="IN"): the portals answer only from India. Public data only: no login, no captcha, no OTP is passed.
 
 - Bihar eProc2 (eproc2.bihar.gov.in): past tenders of the road and city departments, the tender view, the contract (firm, PAN, value)
   and the documents. The queue starts with page 0 of each department's past-tender list and grows by itself.

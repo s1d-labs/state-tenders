@@ -8,6 +8,6 @@ if PROBES:
     print("health checks:", set_probes(FAMILY, PROBES))
 for p in PROJECTS:
     register_project(p["name"], title=p["title"], unit_label=p["unit_label"], record_label=p["record_label"])
-    set_pool(p["name"], FAMILY, p["task"], target=p["target"], env=p["env"], probe=p["probe"], geo="IN", max_workers=p["workers"], threads=1,
+    set_pool(p["name"], FAMILY, p["task"], target=p["target"], env=p["env"], probe=p["probe"], geo="IN", proxy="IN", max_workers=p["workers"], threads=1,
              delay_ms=p["delay_ms"])
     print(p["name"], "queue:", seed_queue(p["name"], p["items"]))
