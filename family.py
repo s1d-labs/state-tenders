@@ -3,7 +3,10 @@
 
 - Bihar eProc2 (eproc2.bihar.gov.in): past tenders of the road and city departments, the tender view, the contract (firm, PAN, value)
   and the documents. The queue starts with page 0 of each department's past-tender list and grows by itself.
+- Andhra Pradesh and Telangana (same TMS software): current works tenders, each notice page and its documents. Only current tenders are
+  public, so the poll workflow queues "poll-<date>" every day, and each poll queues the tenders not seen before.
 """
+import datetime
 import json
 from pathlib import Path
 
@@ -29,4 +32,23 @@ PROJECTS = [
     },
 ]
 
-PROBES = [{"name": f"{FAMILY}:eproc2.bihar.gov.in", "url": "https://eproc2.bihar.gov.in/EPSV2Web/", "expect": "eProc"}]
+TMS = [("ap", "tender.apeprocurement.gov.in", "Andhra Pradesh e-procurement"), ("ts", "tender.telangana.gov.in", "Telangana e-procurement")]
+TODAY = datetime.date.today().isoformat()
+PROJECTS += [
+    {
+        "name": f"{FAMILY}-{slug}",
+        "title": f"{title}: current works tenders, notices and documents",
+        "task": "aptms",
+        "target": host,
+        "env": {"SITE": host},
+        "probe": f"{FAMILY}:{host}",
+        "unit_label": "poll or tender", "record_label": "tender",
+        "items": [{"key": f"poll-{TODAY}", "payload": {}}],
+        "workers": 2,
+        "delay_ms": 2000,
+    }
+    for slug, host, title in TMS
+]
+
+PROBES = [{"name": f"{FAMILY}:{host}", "url": f"https://{host}/login.html", "expect": "CSRFToken"} for _, host, _ in TMS]
+PROBES += [{"name": f"{FAMILY}:eproc2.bihar.gov.in", "url": "https://eproc2.bihar.gov.in/EPSV2Web/", "expect": "eProc"}]

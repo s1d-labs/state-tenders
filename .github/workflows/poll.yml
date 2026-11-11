@@ -1,0 +1,26 @@
+name: poll
+
+# Queues today's poll of the portals that show only current tenders (Andhra Pradesh, Telangana). Each poll queues the tenders not seen
+# before, so a tender is kept while it is still open. The hub trusts this repo through the GitHub OIDC token; no secrets are needed.
+on:
+  schedule:
+    - cron: "37 1 * * *"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt "scrape-hub-client @ git+https://github.com/s1d-labs/runner@main#subdirectory=sdk"
+      - run: python poll.py
+        env:
+          SCRAPE_HUB_URL: https://scrape.s1d.me

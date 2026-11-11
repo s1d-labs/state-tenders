@@ -2,5 +2,5 @@
   "family": "state-tenders",
   "about": "State tender portals that are not on GePNIC: Bihar, Andhra Pradesh, Telangana, Gujarat",
   "setup": ["pip install -r requirements.txt"],
-  "tasks": {"bihar": ["python", "bihar.py"]}
+  "tasks": {"bihar": ["python", "bihar.py"], "aptms": ["python", "aptms.py"]}
 }
