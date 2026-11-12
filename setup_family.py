@@ -2,7 +2,7 @@
 exist are kept."""
 from scrape_hub_client import register_project, seed_queue, set_pool, set_probes
 
-from family import FAMILY, PROBES, PROJECTS
+from family import DIRECT, FAMILY, PROBES, PROJECTS
 
 if PROBES:
     print("health checks:", set_probes(FAMILY, PROBES))
@@ -10,4 +10,9 @@ for p in PROJECTS:
     register_project(p["name"], title=p["title"], unit_label=p["unit_label"], record_label=p["record_label"])
     set_pool(p["name"], FAMILY, p["task"], target=p["target"], env=p["env"], probe=p["probe"], geo="IN", proxy="IN", max_workers=p["workers"], threads=1,
              delay_ms=p["delay_ms"])
+    print(p["name"], "queue:", seed_queue(p["name"], p["items"]))
+for p in DIRECT:      # not in the pool: no GitHub workers; workers with a server token claim its queue directly
+    register_project(p["name"], title=p["title"], unit_label=p["unit_label"], record_label=p["record_label"])
+    set_pool(p["name"], FAMILY, p["task"], target=p["target"], env=p["env"], probe=p["probe"], pool=False, proxy="", max_workers=p["workers"],
+             threads=1, delay_ms=p["delay_ms"])
     print(p["name"], "queue:", seed_queue(p["name"], p["items"]))
