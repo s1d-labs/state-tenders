@@ -61,10 +61,8 @@ installs `scrape-hub-client`, runs `setup`, then for each assignment runs `cwd=f
 - Exit code 0 = finished normally (including "queue empty"). Non-zero = the worker waits a bit and asks for new work.
 - The process gets SIGINT when its time is up (then SIGTERM, then SIGKILL): catch it, call `hub.close("failed", ...)`, exit.
 - Authentication is automatic: the client mints a GitHub OIDC token (the workflow grants `id-token: write`). No secrets.
-- On a **pool server** (projects with `geo`, below) the same command runs the same way, with the same env vars, from a checkout of the
-  family repo at `main` (fetched again every 5 minutes; `setup` re-runs when the commit changes) in its own venv, as an unprivileged
-  user: no sudo, so `playwright install --with-deps` runs without `--with-deps` (Chromium's libraries are already installed). The
-  client authenticates with the server's token from `SCRAPE_HUB_TOKEN`; the code doesn't change.
+- The India pool servers (`vpsin`, `vpsin2`) do not run tasks since 2026-11-12 (the hub has them turned off): every task
+  runs on GitHub runners, directly or through the hub's Mumbai proxies (`proxy="IN"`).
 
 ### Projects, pool entries, health checks (`setup_family.py`, from GitHub Actions in the family repo only)
 
@@ -87,15 +85,14 @@ seed_queue(name, [{"key": "page-1", "payload": {"url": "...", "expected": 20}}, 
   value. The back-off and the automatic throttle may lower it for a while when the site pushes back.
 - `set_pool(..., proxy="IN", proxy_only=["91.124.42."])`: lend this project only some proxies (labels like `in-06` or IP prefixes),
   for sites that refuse some of the hub's IP ranges (mes.gov.in and nhai.gov.in only accept `91.124.42.x`). Health checks
-  (`set_probes`) of `.gov.in` / `.nic.in` sites, of sites used by `proxy`/`geo` projects, or with `"proxy": "IN"` run through a proxy.
+  (`set_probes`) of `.gov.in` / `.nic.in` sites, of sites used by `proxy` projects, or with `"proxy": "IN"` run through a proxy.
 - `set_pool(..., proxy="IN")`: the target only answers from India, and the work runs on GitHub runners through the hub's Indian
   proxies (10 static Mumbai IPs), **one proxy per worker**; the task gets it as `HTTPS_PROXY` / `HTTP_PROXY` (requests, httpx, curl
   use them by themselves) and `SCRAPE_PROXY` (for Playwright and other explicit proxy settings). No free proxy = the project waits.
   A family borrows at most 4 at once by default. This is the first choice for India-only sites. Details: [Proxies](/docs/17-proxies).
-- `set_pool(..., geo="IN")`: the target only answers from that country. Then the work goes **only** to the hub's pool servers in that
-  country (machines in India with their own IPs), never to GitHub runners, whose IPs are in the US/EU. `geo=""` clears it. Without
-  `geo` the work goes only to GitHub runners. Pool servers are few (`vpsin` with 1 Indian IP and `vpsin2` with 4, as of 2026-11-12), so `geo` work runs
-  slower than GitHub work; it suits sites that refuse foreign IPs (most `.gov.in` / `.nic.in` portals).
+- `geo`: not used since 2026-11-12, because the India pool servers are off. The hub stores a `geo="IN"` that a family sends as
+  `proxy="IN"`. For a site that refuses GitHub's runners (many `.gov.in` / `.nic.in` portals), use `proxy="IN"` (above);
+  for a site that answers GitHub's runners, use neither.
 
 ### The client in a task (`scrape_hub_client.HubClient`)
 

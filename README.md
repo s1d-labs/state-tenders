@@ -9,7 +9,7 @@ A family of the s1d-labs scrape pool: the tender portals of states that do not r
 | `state-tenders-ts` | tender.telangana.gov.in | the same, for Telangana |
 | `state-tenders-gujarat` | tender.nprocure.com | road works in progress and Roads and Buildings awards: notice, contract page, documents |
 
-- The portals answer only from India, so the projects use `geo="IN"`: India pool servers only.
+- The portals refuse requests from outside India, so the projects use `proxy="IN"`: GitHub runners through the hub's Mumbai proxies. The India pool servers are not used since 2026-11-12.
 - Public data only. No login, captcha or OTP is passed. Award data that sits behind a captcha is not collected.
 - Pace: 2 workers per portal, at most one request per 2 seconds per worker.
 
