@@ -12,8 +12,8 @@ import html
 import json
 import os
 import re
-import signal
 import sys
+import threading
 import time
 
 from portal import Pace, session
@@ -26,12 +26,7 @@ EMPTY = ("nTenderID nDepartmentID subDeptId ddlDistrict ddlMandal biddingType mE
          "hdncorrigendumsDetails2 hdnadvsearch hdnPreviousPage hdnIndentID hdnTenderCategory hdnProcurementID hdnFromStatus "
          "typeOfWorkFromConsolidation popUPRequestParameter selectedCircleDivison selectedDepartmentID selectedProcurementType selectedTypeofWork aid").split()
 PAGE = 100
-stop = False
-
-
-def on_signal(*_):
-    global stop
-    stop = True
+stop = threading.Event()     # main() swaps in scrape_hub_client.stop_flag(), set on SIGINT / SIGTERM
 
 
 class Portal:
@@ -139,7 +134,7 @@ def run_poll(hub, P, item, seed_queue, project):
                 fresh.append({"key": f"t-{f['procurement_id']}-{f['indent_id']}", "payload": f})
         n += len(rows)
         start += PAGE
-        if not rows or start >= total or stop:
+        if not rows or start >= total or stop.is_set():
             break
     for i in range(0, len(fresh), 500):
         seed_queue(project, fresh[i:i + 500])
@@ -171,15 +166,15 @@ def run_tender(hub, P, item):
 
 
 def main():
-    from scrape_hub_client import HubClient, seed_queue
+    global stop
+    from scrape_hub_client import HubClient, seed_queue, stop_flag
     project = os.environ["SCRAPE_POOL_PROJECT"]
     deadline = time.time() + float(os.environ.get("SCRAPE_MAX_HOURS", "1")) * 3600 - 300
     hub = HubClient(project, job_index=int(os.environ.get("SCRAPE_JOB_INDEX", 0)), total_jobs=int(os.environ.get("SCRAPE_TOTAL_JOBS", 1)))
-    signal.signal(signal.SIGINT, on_signal)
-    signal.signal(signal.SIGTERM, on_signal)
+    stop = stop_flag()
     P = Portal(hub, max(1.0, hub.settings.get("delay_ms", 2000) / 1000))
     try:
-        while time.time() < deadline and not stop:
+        while time.time() < deadline and not stop.is_set():
             if hub.settings.get("paused"):
                 time.sleep(30)
                 continue
@@ -196,7 +191,7 @@ def main():
                 hub.failure("bad-item", item["key"], f"{type(e).__name__}: {e}"[:200])
                 hub.complete([item["key"]], "failed", error=type(e).__name__)
                 P.fresh()
-        hub.close("finished" if not stop else "failed", "" if not stop else "stopped by signal")
+        hub.close("finished" if not stop.is_set() else "failed", "" if not stop.is_set() else "stopped by signal")
     except Exception as e:
         hub.close("failed", str(e)[:200])
         raise
@@ -206,8 +201,8 @@ if __name__ == "__main__":
     if len(sys.argv) > 2 and sys.argv[1] == "--local":
         SITE = sys.argv[2]
         STATE = "ap" if "apeprocurement" in SITE else "ts"
-        from bihar import LocalHub
-        hub = LocalHub()
+        from scrape_hub_client import LocalHub
+        hub = LocalHub(save_dir="/tmp/aptms-test")
         P = Portal(None, 2.0)
         total, rows = P.page(0, sys.argv[3] if len(sys.argv) > 3 else "")
         f = row_fields(rows[0])

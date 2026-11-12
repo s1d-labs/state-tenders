@@ -9,8 +9,8 @@ import gzip
 import json
 import os
 import re
-import signal
 import sys
+import threading
 import time
 
 from portal import Pace, session
@@ -19,12 +19,7 @@ BASE = "https://eproc2.bihar.gov.in/EPSV2Web"
 ORG = 538
 ROWS = 100
 FILEREF = re.compile(r"^\d+/[^|]+\|\d+\|.+$")      # stored attachment value: "<group>/<stamp>_<name>|<bytes>|<name>"
-stop = False
-
-
-def on_signal(*_):
-    global stop
-    stop = True
+stop = threading.Event()     # main() swaps in scrape_hub_client.stop_flag(), set on SIGINT / SIGTERM
 
 
 class Portal:
@@ -151,15 +146,15 @@ def run_list(hub, P, item, seed_queue, project):
 
 
 def main():
-    from scrape_hub_client import HubClient, seed_queue
+    global stop
+    from scrape_hub_client import HubClient, seed_queue, stop_flag
     project = os.environ["SCRAPE_POOL_PROJECT"]
     deadline = time.time() + float(os.environ.get("SCRAPE_MAX_HOURS", "1")) * 3600 - 300
     hub = HubClient(project, job_index=int(os.environ.get("SCRAPE_JOB_INDEX", 0)), total_jobs=int(os.environ.get("SCRAPE_TOTAL_JOBS", 1)))
-    signal.signal(signal.SIGINT, on_signal)
-    signal.signal(signal.SIGTERM, on_signal)
+    stop = stop_flag()
     P = Portal(hub, max(1.0, hub.settings.get("delay_ms", 2000) / 1000))
     try:
-        while time.time() < deadline and not stop:
+        while time.time() < deadline and not stop.is_set():
             if hub.settings.get("paused"):
                 time.sleep(30)
                 continue
@@ -175,47 +170,16 @@ def main():
             except Exception as e:      # one bad tender must not stop the run
                 hub.failure("bad-item", item["key"], f"{type(e).__name__}: {e}"[:200])
                 hub.complete([item["key"]], "failed", error=type(e).__name__)
-        hub.close("finished" if not stop else "failed", "" if not stop else "stopped by signal")
+        hub.close("finished" if not stop.is_set() else "failed", "" if not stop.is_set() else "stopped by signal")
     except Exception as e:
         hub.close("failed", str(e)[:200])
         raise
 
 
-class LocalHub:
-    """Stands in for the hub in a local test: files go to /tmp/bihar-test, records and metrics are printed."""
-    settings = {}
-
-    def __init__(self):
-        os.makedirs("/tmp/bihar-test", exist_ok=True)
-
-    def metric(self, *a):
-        pass
-
-    def error(self):
-        pass
-
-    def block(self):
-        print("blocked")
-
-    def failure(self, *a):
-        print("failure", a)
-
-    def complete(self, keys, status, **k):
-        print("complete", keys, status, k)
-
-    def upload_many(self, files):
-        for p, body, _ in files:
-            t = "/tmp/bihar-test/" + p.replace("/", "__")
-            open(t, "wb").write(body)
-            print("file", p, len(body))
-
-    def record(self, rid, data):
-        print("record", rid, json.dumps(data, ensure_ascii=False)[:1500])
-
-
 if __name__ == "__main__":
     if len(sys.argv) > 2 and sys.argv[1] == "--local":
-        hub, P = LocalHub(), Portal(None, 2.0)
+        from scrape_hub_client import LocalHub
+        hub, P = LocalHub(save_dir="/tmp/bihar-test"), Portal(None, 2.0)
         seeded = []
         run_list(hub, P, {"key": "list-x", "payload": {"dept": sys.argv[2], "start": int(sys.argv[3]) if len(sys.argv) > 3 else 0}},
                  lambda project, items: seeded.extend(items), "local")
