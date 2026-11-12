@@ -13,9 +13,9 @@ import json
 import os
 import re
 import secrets
-import signal
 import string
 import sys
+import threading
 import time
 import urllib.parse
 
@@ -28,12 +28,7 @@ from portal import Pace, session
 BASE = "https://tender.nprocure.com"
 PAGE = 100
 ROAD = re.compile(r"\b(road|roads|marg|highway|bridge|culvert|causeway|flyover|resurfac\w*|re-?carpet\w*|bituminous|pmgsy|mmgsy|footpath|pavement|cc road)\b", re.I)
-stop = False
-
-
-def on_signal(*_):
-    global stop
-    stop = True
+stop = threading.Event()     # main() swaps in scrape_hub_client.stop_flag(), set on SIGINT / SIGTERM
 
 
 def envelope(obj):
@@ -161,15 +156,15 @@ def run_tender(hub, P, item):
 
 
 def main():
-    from scrape_hub_client import HubClient, seed_queue
+    global stop
+    from scrape_hub_client import HubClient, seed_queue, stop_flag
     project = os.environ["SCRAPE_POOL_PROJECT"]
     deadline = time.time() + float(os.environ.get("SCRAPE_MAX_HOURS", "1")) * 3600 - 300
     hub = HubClient(project, job_index=int(os.environ.get("SCRAPE_JOB_INDEX", 0)), total_jobs=int(os.environ.get("SCRAPE_TOTAL_JOBS", 1)))
-    signal.signal(signal.SIGINT, on_signal)
-    signal.signal(signal.SIGTERM, on_signal)
+    stop = stop_flag()
     P = Portal(hub, max(1.0, hub.settings.get("delay_ms", 2000) / 1000))
     try:
-        while time.time() < deadline and not stop:
+        while time.time() < deadline and not stop.is_set():
             if hub.settings.get("paused"):
                 time.sleep(30)
                 continue
@@ -185,7 +180,7 @@ def main():
             except Exception as e:
                 hub.failure("bad-item", item["key"], f"{type(e).__name__}: {e}"[:200])
                 hub.complete([item["key"]], "failed", error=type(e).__name__)
-        hub.close("finished" if not stop else "failed", "" if not stop else "stopped by signal")
+        hub.close("finished" if not stop.is_set() else "failed", "" if not stop.is_set() else "stopped by signal")
     except Exception as e:
         hub.close("failed", str(e)[:200])
         raise
@@ -193,8 +188,8 @@ def main():
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--local":
-        from bihar import LocalHub
-        hub, P = LocalHub(), Portal(None, 2.0)
+        from scrape_hub_client import LocalHub
+        hub, P = LocalHub(save_dir="/tmp/bihar-test"), Portal(None, 2.0)
         seeded = []
         run_list(hub, P, {"key": "awd-14-0", "payload": {"client": 14, "start": 0}}, lambda p, items: seeded.extend(items), "local")
         print("awarded seeded", len(seeded), seeded[-1]["key"])

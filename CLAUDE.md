@@ -3,7 +3,7 @@
 Tender portals of states that do not run GePNIC (s1d-labs scrape pool). The general contract (scrape.json, env vars, HubClient) is below,
 from the family template. What is particular here:
 
-- One task script per portal (`bihar.py`), with shared HTTP code in `portal.py` (certificates in `certs/`, pacing, request metrics).
+- One task script per portal (`bihar.py`), with shared HTTP code in `portal.py` (certificates from scrape-hub-client's `ca_bundle()`, pacing, request metrics).
 - Public data only: never pass a login, captcha or OTP. Some portals check a captcha only in the browser; skipping it by calling the API
   is the owner's call, not this repo's.
 - Each tender is one record; its raw JSON goes to `raw/<id>.json.gz` and its documents to `docs/<id>/<name>`.
@@ -94,7 +94,7 @@ seed_queue(name, [{"key": "page-1", "payload": {"url": "...", "expected": 20}}, 
   A family borrows at most 4 at once by default. This is the first choice for India-only sites. Details: [Proxies](/docs/17-proxies).
 - `set_pool(..., geo="IN")`: the target only answers from that country. Then the work goes **only** to the hub's pool servers in that
   country (machines in India with their own IPs), never to GitHub runners, whose IPs are in the US/EU. `geo=""` clears it. Without
-  `geo` the work goes only to GitHub runners. Pool servers are few (10 worker processes on 5 Indian IPs as of 2026-10-30), so `geo` work runs
+  `geo` the work goes only to GitHub runners. Pool servers are few (`vpsin` with 1 Indian IP and `vpsin2` with 4, as of 2026-11-12), so `geo` work runs
   slower than GitHub work; it suits sites that refuse foreign IPs (most `.gov.in` / `.nic.in` portals).
 
 ### The client in a task (`scrape_hub_client.HubClient`)

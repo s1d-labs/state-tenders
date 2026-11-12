@@ -1,29 +1,16 @@
 """Shared parts of this family's crawlers: one HTTP session with the right certificates, polite pacing, and request metrics."""
-import tempfile
 import time
-from pathlib import Path
 
-import certifi
 import requests
+from scrape_hub_client import ca_bundle, count_request
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; s1d-labs public records crawl; +https://labs.s1d.me)"}
-
-
-def trust():
-    """certifi plus the public intermediates in certs/ that some portals fail to send. Verification stays on."""
-    extra = sorted(Path(__file__).parent.glob("certs/*.pem"))
-    if not extra:
-        return True
-    with tempfile.NamedTemporaryFile("wb", suffix=".pem", delete=False) as f:
-        for p in [Path(certifi.where())] + extra:
-            f.write(p.read_bytes() + b"\n")
-    return f.name
 
 
 def session():
     s = requests.Session()
     s.headers.update(HEADERS)
-    s.verify = trust()
+    s.verify = ca_bundle()      # certifi + public intermediates some portals fail to send (from scrape-hub-client). Verification stays on.
     return s
 
 
@@ -42,16 +29,8 @@ class Pace:
             r = fn(*a, **k)
         except requests.RequestException:
             self.last = time.time()
-            if self.hub:
-                self.hub.metric("http_error")
-                self.hub.error()
+            count_request(self.hub, None)           # http_error (no metrics without a hub)
             raise
         self.last = time.time()
-        if self.hub:
-            self.hub.metric("n_http")
-            self.hub.metric("t_http_s", self.last - t)
-            if r.status_code != 200:
-                self.hub.metric(f"http_{r.status_code}")
-                if r.status_code in (403, 429, 503):
-                    self.hub.block()
+        count_request(self.hub, r.status_code, self.last - t)    # n_http, t_http_s, http_<code>, block on 403/429/503
         return r
