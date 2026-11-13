@@ -130,7 +130,7 @@ def run_tender(hub, P, item):
         if not body:
             hub.failure("no-file", f"{tid}/{name}", "empty answer")
             continue
-        path = f"docs/{tid}/{re.sub(r'[^A-Za-z0-9._ -]', '_', name)}"
+        path = f"docs/{tid}/{re.sub(r'[^A-Za-z0-9._-]', '_', name)}"
         hub.upload_many([(path, body, "application/pdf" if body[:5] == b"%PDF-" else "application/octet-stream")])
         files.append({"name": name, "file": path, "bytes": len(body)})
     raw = gzip.compress(json.dumps({"row": row, "view": view, "contract": po}, ensure_ascii=False).encode())
