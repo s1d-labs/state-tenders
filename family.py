@@ -7,6 +7,8 @@
   Buildings; notice, contract page, documents.
 - Andhra Pradesh and Telangana (same TMS software): current works tenders, each notice page and its documents. Only current tenders are
   public, so the poll workflow queues "poll-<date>" every day, and each poll queues the tenders not seen before.
+- Chhattisgarh eProc (eproc.cgstate.gov.in): open tenders of all departments from the home page's live list, the tender view and the
+  documents, kept by the same daily poll. It refuses the Mumbai proxies, so it is not in the pool (DIRECT): workers on dev-vps-3 run it.
 """
 import datetime
 import json
@@ -64,5 +66,21 @@ PROJECTS.append({
     "workers": 2,
     "delay_ms": 2000,
 })
+
+# Chhattisgarh eProc refuses the hub's Mumbai proxies (CONNECT 502 on all three IP ranges, 2026-11-12), so GitHub runners cannot
+# reach it. Its project stays out of the pool (pool=False: no GitHub workers) and runs on workers on dev-vps-3 (OVH Mumbai) with that
+# server's hub token. Only open tenders are public (the closed and awarded search asks for a captcha), so the poll queues it daily.
+DIRECT = [{
+    "name": f"{FAMILY}-cg",
+    "title": "Chhattisgarh eProc: open tenders of all departments, tender view and documents",
+    "task": "cg",
+    "target": "eproc.cgstate.gov.in",
+    "env": {},
+    "probe": None,
+    "unit_label": "poll or tender", "record_label": "tender",
+    "items": [{"key": f"poll-{TODAY}", "payload": {}}],
+    "workers": 2,
+    "delay_ms": 2000,
+}]
 
 PROBES = []             # the hub checks from outside India, and these portals answer only Indian addresses

@@ -150,7 +150,7 @@ def run_tender(hub, P, item):
         if not body:
             hub.failure("no-file", f"{tid}/{name}", "empty answer")
             continue
-        path = f"docs/{tid}/{(q.get('uid') or ['x'])[0][:8]}-{re.sub(r'[^A-Za-z0-9._ -]', '_', name)[:140]}"
+        path = f"docs/{tid}/{(q.get('uid') or ['x'])[0][:8]}-{re.sub(r'[^A-Za-z0-9._-]', '_', name)[:140]}"
         hub.upload_many([(path, body, "application/pdf" if body[:5] == b"%PDF-" else "application/octet-stream")])
         files.append({"name": name, "file": path, "bytes": len(body)})
     hub.upload_many([(f"raw/{tid}.html.gz", gzip.compress("\n<!-- documents -->\n".join([nit, docs, aoc]).encode()), "application/gzip")])

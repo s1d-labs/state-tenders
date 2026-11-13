@@ -1,6 +1,6 @@
 name: poll
 
-# Queues today's poll of the portals that show only current tenders (Andhra Pradesh, Telangana). Each poll queues the tenders not seen
+# Queues today's poll of the portals that show only current tenders (Andhra Pradesh, Telangana, Chhattisgarh). Each poll queues the tenders not seen
 # before, so a tender is kept while it is still open. The hub trusts this repo through the GitHub OIDC token; no secrets are needed.
 on:
   schedule:
