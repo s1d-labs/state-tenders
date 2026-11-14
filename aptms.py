@@ -225,7 +225,7 @@ def main():
     hub = HubClient(project, job_index=int(os.environ.get("SCRAPE_JOB_INDEX", 0)), total_jobs=int(os.environ.get("SCRAPE_TOTAL_JOBS", 1)))
     signal.signal(signal.SIGINT, on_signal)
     signal.signal(signal.SIGTERM, on_signal)
-    P = Portal(hub, max(1.0, hub.settings.get("delay_ms", 2000) / 1000))
+    P = Portal(hub, max(0.5, hub.settings.get("delay_ms", 2000) / 1000))
     try:
         while time.time() < deadline and not stop:
             if hub.settings.get("paused"):

@@ -35,8 +35,8 @@ PROJECTS = [
         "probe": None,        # no health check: the hub is outside India and the portal answers only Indian addresses
         "unit_label": "list page or tender", "record_label": "tender",
         "items": [{"key": f"list-{d}-0", "payload": {"dept": d, "start": 0}} for d in BIHAR_DEPTS],
-        "workers": 4,
-        "delay_ms": 1500,
+        "workers": 6,
+        "delay_ms": 600,
     },
 ]
 
@@ -52,8 +52,8 @@ PROJECTS += [
         "probe": None,
         "unit_label": "poll, id range or tender", "record_label": "tender",
         "items": [{"key": f"poll-{TODAY}", "payload": {}}],
-        "workers": 5,
-        "delay_ms": 1500,
+        "workers": 6,
+        "delay_ms": 600,
     }
     for slug, host, title in TMS
 ]
@@ -72,8 +72,8 @@ PROJECTS.append({
     "probe": None,
     "unit_label": "list page, id range or tender", "record_label": "tender",
     "items": [{"key": "prog-0", "payload": {"start": 0}}] + [{"key": f"awd-{c}-0", "payload": {"client": c, "start": 0}} for c in GUJARAT_AWARD_CLIENTS],
-    "workers": 4,
-    "delay_ms": 1500,
+    "workers": 6,
+    "delay_ms": 600,
 })
 
 # Chhattisgarh eProc refuses the hub's Mumbai proxies (CONNECT 502 on all three IP ranges, 2026-11-12), so GitHub runners cannot
