@@ -1,8 +1,10 @@
-"""Bihar eProc2 (eproc2.bihar.gov.in, mjunction): past tenders of the road and city departments, each with its full tender view,
-its contract (purchase order: firm, PAN, value, date) and every attached document. All of it is public with the guest token that
-the listing page gives to any visitor; no login, no captcha.
+"""Bihar eProc2 (eproc2.bihar.gov.in, mjunction): past tenders of all departments since the portal began (July 2020, about 102,600); the poll workflow also queues the newest 300 rows every day,
+each with its full tender view, its contract (purchase order: firm, PAN, value, date) and its attached documents. All of it is public
+with the guest token that the listing page gives to any visitor; no login, no captcha.
 
-Queue items: "list-<dept>-<start>" (one page of past tenders; a full page queues the next page) and "t-<tenderid>" (one tender).
+Queue items: "plist-<start>" (one page of the past-tender list of the whole state; every page is queued at setup, so one bad page does
+not stop the others), "list-<dept>-<start>" (the older per-department pages; a full page queues the next page) and "t-<tenderid>"
+(one tender). Env DOCS (portal.want_docs): which tenders get their documents downloaded; "works" = procurement category Works.
 A record per tender, id "bihar-<tenderid>". Files: raw/<tenderid>.json.gz (tender view + contract), docs/<tenderid>/<file>.
 Local test: python bihar.py --local 945 (one list page and its first tender, files saved under /tmp/bihar-test)."""
 import gzip
@@ -13,11 +15,13 @@ import signal
 import sys
 import time
 
-from portal import Pace, session
+from portal import Pace, session, want_docs
 
 BASE = "https://eproc2.bihar.gov.in/EPSV2Web"
 ORG = 538
 ROWS = 100
+WORKS = 1557                                        # procurement category "Works" (proccatid)
+DOCS = os.environ.get("DOCS", "all")
 FILEREF = re.compile(r"^\d+/[^|]+\|\d+\|.+$")      # stored attachment value: "<group>/<stamp>_<name>|<bytes>|<name>"
 stop = False
 
@@ -52,13 +56,31 @@ class Portal:
             return r
         return r
 
-    def past(self, dept, start):
-        r = self.post(f"/rest/openarea/getPastTenders?startpoint={start}&maxRow={ROWS}", {"orgId": ORG, "deptId": int(dept)})
-        return r.json() if r.status_code == 200 and r.content else []
+    def past(self, dept, start, rows=ROWS):
+        """One page of past tenders; dept None = the whole state. Raises when the answer is not a list (the caller retries later)."""
+        body = {"orgId": ORG} if dept is None else {"orgId": ORG, "deptId": int(dept)}
+        for attempt in range(2):
+            r = self.post(f"/rest/openarea/getPastTenders?startpoint={start}&maxRow={rows}", body)
+            try:
+                d = (r.json() if r.content.strip() else []) if r.status_code == 200 else None     # past the end: an empty answer
+            except ValueError:
+                d = None
+            if isinstance(d, list) and (d or attempt):
+                return d
+            self.token = None                       # an empty answer can also mean a stale token: ask once more with a new one
+        raise RuntimeError(f"past-tender list: HTTP {r.status_code}, {len(r.content)} bytes")
 
     def tender(self, tid):
-        r = self.post(f"/rest/quotation/previewTenderByTenderId?tenderId={tid}")
-        return r.json() if r.status_code == 200 and r.content else None
+        """The tender view. An empty or non-JSON answer (seen when the guest token ends without a 401) gets one more try with a new token."""
+        for attempt in range(2):
+            r = self.post(f"/rest/quotation/previewTenderByTenderId?tenderId={tid}")
+            try:
+                if r.status_code == 200 and r.content.strip():
+                    return r.json()
+            except ValueError:
+                pass
+            self.token = None
+        return None
 
     def contract(self, tid):
         r = self.post(f"/rest/openarea/getPoDetailsForPastTender?tenderId={tid}")
@@ -123,9 +145,13 @@ def run_tender(hub, P, item):
         hub.complete([item["key"]], "failed", error="no tender view")
         return
     po = P.contract(tid)
-    files = []
+    files, listed = [], []
+    get = want_docs(DOCS, view.get("proccatid") == WORKS or row.get("currentproccatid") == WORKS, view.get("description"))
     for group, ref in attachments(view):
         name = ref.split("|")[-1][:150]
+        listed.append({"name": name, "group": group, "ref": ref})
+        if not get:
+            continue
         body = P.download(tid, group, ref)
         if not body:
             hub.failure("no-file", f"{tid}/{name}", "empty answer")
@@ -135,15 +161,19 @@ def run_tender(hub, P, item):
         files.append({"name": name, "file": path, "bytes": len(body)})
     raw = gzip.compress(json.dumps({"row": row, "view": view, "contract": po}, ensure_ascii=False).encode())
     hub.upload_many([(f"raw/{tid}.json.gz", raw, "application/gzip")])
-    hub.record(f"bihar-{tid}", {**summary(row, view, po), "files": files, "raw": f"raw/{tid}.json.gz", "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
+    hub.record(f"bihar-{tid}", {**summary(row, view, po), "files": files, "documents": listed, "raw": f"raw/{tid}.json.gz", "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
     hub.complete([item["key"]], "done", fetched=1)
 
 
 def run_list(hub, P, item, seed_queue, project):
-    dept, start = item["payload"]["dept"], int(item["payload"]["start"])
-    rows = P.past(dept, start)
+    dept, start = item["payload"].get("dept"), int(item["payload"]["start"])
+    # whole-state pages read 2 x ROWS rows: the list is newest first and grows while the crawl runs, so the overlap keeps a tender
+    # that moved down by up to ROWS places from falling between two pages ("t-" keys that exist are not queued twice)
+    rows = P.past(dept, start, ROWS if dept is not None else 2 * ROWS)
+    if not rows and item["payload"].get("total", 0) > start:
+        raise RuntimeError("empty page inside the list")
     fresh = [{"key": f"t-{r['currenttenderid']}", "payload": {"id": r["currenttenderid"], "row": r}} for r in rows if r.get("currenttenderid")]
-    if len(rows) >= ROWS:
+    if len(rows) >= ROWS and dept is not None:
         fresh.append({"key": f"list-{dept}-{start + ROWS}", "payload": {"dept": dept, "start": start + ROWS}})
     if fresh:
         seed_queue(project, fresh)
@@ -168,7 +198,7 @@ def main():
                 break
             item = items[0]
             try:
-                if item["key"].startswith("list-"):
+                if item["key"].startswith(("list-", "plist-")):
                     run_list(hub, P, item, seed_queue, project)
                 else:
                     run_tender(hub, P, item)

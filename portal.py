@@ -1,4 +1,5 @@
 """Shared parts of this family's crawlers: one HTTP session with the right certificates, polite pacing, and request metrics."""
+import re
 import tempfile
 import time
 from pathlib import Path
@@ -55,3 +56,21 @@ class Pace:
                 if r.status_code in (403, 429, 503):
                     self.hub.block()
         return r
+
+
+# Road works, by the name of the work (English and the common Hindi/Telugu transliterations used in titles)
+ROAD = re.compile(r"\b(road|roads|rd|marg|highway|bridge|culvert|causeway|flyover|rob|rub|resurfac\w*|re-?carpet\w*|bituminous|bt|wbm|"
+                  r"pmgsy|mmgsy|footpath|pavement|cc road|sadak|path|pul|setu)\b", re.I)
+
+
+def want_docs(policy, works, title):
+    """Which tenders get their documents downloaded. DOCS env of the project: all, works (works tenders only), road (works tenders
+    whose name of work is about a road or bridge), none. The list of documents is always kept in the record and the raw page."""
+    policy = (policy or "all").lower()
+    if policy == "all":
+        return True
+    if policy == "none":
+        return False
+    if policy == "works":
+        return bool(works)
+    return bool(works) and bool(ROAD.search(title or ""))

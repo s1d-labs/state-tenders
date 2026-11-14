@@ -3,10 +3,15 @@ every document. Lists: "Tenders In Progress" (all departments, road works kept b
 Buildings department (client 14). No login, no captcha. The list call wraps its body the way the site's own page does (AES with the
 key in the same request): this hides the body in transit, it does not restrict who may ask.
 
-Queue items: "prog-<start>" and "awd-<client>-<start>" (list pages; a full page queues the next) and "t-<tender id>" (one tender).
-A record per tender, id "gj-<tender id>". Files: raw/<id>.html.gz (notice, documents list, contract page), docs/<id>/<file>.
+Queue items: "prog-<start>" and "awd-<client>-<start>" (list pages; a full page queues the next), "t-<tender id>" (one tender) and
+"r-<start>" (the full history: tender ids start .. start+n-1, all departments, all years; the notice page of any tender id is public).
+Ids with no notice do not exist and are skipped. A tender's documents stay on the site only while it is open, so the documents page
+is read for tenders that closed less than DOCS_DAYS days ago. The contract page lists the bidders; each "View AOC" link gives the
+final contract value and award date.
+A record per tender, id "gj-<tender id>". Files: raw/<id>.html.gz (notice, documents list, contract page, AOC pages), docs/<id>/<file>.
 Local test: python nprocure.py --local (one awarded page and its first tender, files under /tmp/bihar-test)."""
 import base64
+import datetime
 import gzip
 import html
 import json
@@ -27,6 +32,7 @@ from portal import Pace, session
 
 BASE = "https://tender.nprocure.com"
 PAGE = 100
+DOCS_DAYS = 60
 ROAD = re.compile(r"\b(road|roads|marg|highway|bridge|culvert|causeway|flyover|resurfac\w*|re-?carpet\w*|bituminous|pmgsy|mmgsy|footpath|pavement|cc road)\b", re.I)
 stop = False
 
@@ -132,12 +138,51 @@ def run_list(hub, P, item, seed_queue, project):
     hub.complete([k], "done", fetched=len(rows))
 
 
-def run_tender(hub, P, item):
-    f = item["payload"]
-    tid = f["tender_id"]
-    nit = P.page("/view-nit-home", tid)
-    docs = P.page("/view-nit-document", tid)
-    aoc = P.page("/viewBidSubmittedAOCDetails", tid, {"pageType": "4", "backPageType": "11"}) if f.get("awarded_list") else ""
+def closing(n):
+    """The bid submission closing date of a notice, or None."""
+    for k, v in n.items():
+        if "closing" in k.lower():
+            m = re.search(r"(\d{2})-(\d{2})-(\d{4})", v)
+            if m:
+                return datetime.date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+    return None
+
+
+def bidders(aoc):
+    """Rows of the contract page's "Details of Bid Submitted" table: supplier and, where the department gave it, the AOC form."""
+    out = []
+    for row in re.findall(r"<tr[^>]*>(.*?)</tr>", aoc or "", re.S):
+        cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
+        if len(cells) < 2 or not text(cells[0]).isdigit():
+            continue
+        form = {n: html.unescape(v) for n, v in re.findall(r'name="([^"]+)"\s+value="([^"]*)"', row)}
+        out.append({"sr": text(cells[0]), "supplier": text(cells[1]), "aoc_form": form if "before-aoc-details" in row else None})
+    return out
+
+
+def aoc_details(page):
+    """Final contract value and award date from an AOC page (the last table: value, date, uploaded AOC)."""
+    t = text(re.sub(r"(?is)<(script|style).*?</\1>", " ", page or ""))
+    m = re.search(r"Final Contract Value\(INR\)\s+Contract Award Date\s+Upload AOC\s+([\d.,]+)\s+(\d{2}-\d{2}-\d{4}(?: \d{2}:\d{2})?)", t)
+    return {"final_value": m.group(1) if m else None, "award_date": m.group(2) if m else None, "text": t[-1200:]}
+
+
+def fetch(hub, P, tid, f, nit=None):
+    """Read one tender and store it. Returns False when the id has no notice (no such tender)."""
+    nit = nit if nit is not None else P.page("/view-nit-home", tid)
+    n = notice(nit)
+    if len(n) < 10:
+        return False
+    close = closing(n)
+    docs = P.page("/view-nit-document", tid) if close is None or close >= datetime.date.today() - datetime.timedelta(days=DOCS_DAYS) else ""
+    aoc = P.page("/viewBidSubmittedAOCDetails", tid, {"pageType": "4", "backPageType": "11"})
+    bids, aocs = bidders(aoc), []
+    for b in bids:
+        if b["aoc_form"]:
+            page = P.pace(P.s.post, BASE + "/before-aoc-details", data=b["aoc_form"], timeout=(20, 120)).text
+            aocs.append(page)
+            b["aoc"] = aoc_details(page)
+        b.pop("aoc_form", None)
     files, seen = [], set()
     for href in re.findall(r"href='(/common/download\?uid=[^']+)'", docs):
         href = html.unescape(href)
@@ -153,11 +198,29 @@ def run_tender(hub, P, item):
         path = f"docs/{tid}/{(q.get('uid') or ['x'])[0][:8]}-{re.sub(r'[^A-Za-z0-9._-]', '_', name)[:140]}"
         hub.upload_many([(path, body, "application/pdf" if body[:5] == b"%PDF-" else "application/octet-stream")])
         files.append({"name": name, "file": path, "bytes": len(body)})
-    hub.upload_many([(f"raw/{tid}.html.gz", gzip.compress("\n<!-- documents -->\n".join([nit, docs, aoc]).encode()), "application/gzip")])
+    hub.upload_many([(f"raw/{tid}.html.gz", gzip.compress("\n<!-- documents -->\n".join([nit, docs, aoc] + aocs).encode()), "application/gzip")])
     aoc_text = text(re.sub(r"(?is)<(script|style).*?</\1>", " ", aoc))
-    hub.record(f"gj-{tid}", {**f, "notice": notice(nit), "contract_page": aoc_text[-1500:] if aoc else "", "files": files,
+    hub.record(f"gj-{tid}", {"tender_id": str(tid), "title": n.get("Description of Material/Name of Work") or n.get("Tender title/Name Of Project") or f.get("title"), **f, "notice": n,
+                             "bidders": bids, "contract_page": aoc_text[-1500:] if aoc else "", "files": files, "docs_read": bool(docs),
                              "raw": f"raw/{tid}.html.gz", "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
+    return True
+
+
+def run_tender(hub, P, item):
+    f = item["payload"]
+    fetch(hub, P, f["tender_id"], f)
     hub.complete([item["key"]], "done", fetched=1)
+
+
+def run_range(hub, P, item):
+    p = item["payload"]
+    skip, n = set(p.get("skip") or []), 0
+    for tid in range(int(p["start"]), int(p["start"]) + int(p["n"])):
+        if stop:
+            raise RuntimeError("stopped")
+        if tid not in skip:
+            n += fetch(hub, P, tid, {})
+    hub.complete([item["key"]], "done", fetched=n)
 
 
 def main():
@@ -180,6 +243,8 @@ def main():
             try:
                 if item["key"].startswith(("prog-", "awd-")):
                     run_list(hub, P, item, seed_queue, project)
+                elif item["key"].startswith("r-"):
+                    run_range(hub, P, item)
                 else:
                     run_tender(hub, P, item)
             except Exception as e:
